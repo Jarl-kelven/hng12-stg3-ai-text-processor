@@ -13,7 +13,7 @@ export default function ChatTranslator() {
     { code: 'pt', name: 'Portuguese' },
     { code: 'tr', name: 'Turkey' },
     { code: 'ru', name: 'Russian' },
-    { code: 'ja', name: 'Japanese' }
+    { code: 'fr', name: 'French' }
   ];
 
   const handleSubmit = async (e) => {
@@ -69,23 +69,19 @@ export default function ChatTranslator() {
     try {
       const message = messages.find(msg => msg.id === messageId);
       const detector = await self.translation.createDetector();
-      const sourceLang = (await detector.detect(message.text.trim()))[0].detectedLanguage;
+      const detectionResult = await detector.detect(message.text.trim());
+      const sourceLang = detectionResult[0].detectedLanguage;
   
-      // Add validation checks
+      // Check for same language first
       if (sourceLang === targetLanguage) {
-        throw new Error('Source and target languages are the same');
+        alert('⚠️ Source and target languages are the same!');
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId ? { ...msg, loading: false } : msg
+        ));
+        return; // Exit early
       }
   
-      // Define supported language pairs
-      const supportedPairs = {
-        en: ['es', 'ja', 'pt', 'ru', 'tr'],
-        
-      };
-  
-      if (!supportedPairs[sourceLang]?.includes(targetLanguage)) {
-        throw new Error('Unsupported language pair');
-      }
-  
+      // Proceed with translation if languages are different
       const translator = await self.translation.createTranslator({
         sourceLanguage: sourceLang,
         targetLanguage
@@ -102,8 +98,7 @@ export default function ChatTranslator() {
               [targetLanguage]: translation
             },
             showTranslation: true,
-            loading: false,
-            error: null
+            loading: false
           };
         }
         return msg;
@@ -115,16 +110,13 @@ export default function ChatTranslator() {
           return { 
             ...msg, 
             loading: false,
-            error: error.message.includes('same') 
-              ? 'Cannot translate to the same language' 
-              : 'Unsupported language combination'
+            error: 'Translation failed. Please try another language pair.'
           };
         }
         return msg;
       }));
     }
   };
-
   const languageTagToHumanReadable = (languageTag, targetLanguage) => {
     const displayNames = new Intl.DisplayNames([targetLanguage], { type: 'language' });
     return displayNames.of(languageTag);
@@ -161,8 +153,8 @@ export default function ChatTranslator() {
             </button>
 
             <div className="mb-2">
-              <p className="text-gray-800">{message.text}</p>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-blue-800">{message.text}</p>
+              <p className="text-sm text-blue-800 mt-1">
                 Detected: {message.detectedLang} ({message.confidence}% confidence)
               </p>
             </div>
@@ -200,8 +192,8 @@ export default function ChatTranslator() {
 
             {message.showTranslation && message.translations[targetLanguage] && (
               <div className="mt-2 p-2 bg-gray-50 rounded">
-                <p className="font-semibold">Translated to {languages.find(l => l.code === targetLanguage).name}:</p>
-                <p className="text-gray-700">{message.translations[targetLanguage]}</p>
+                <p className="font-semibold text-blue-800">Translated to {languages.find(l => l.code === targetLanguage).name}:</p>
+                <p className="text-blue-800">{message.translations[targetLanguage]}</p>
                 {message.error && (
                   <div className="mt-2 p-2 bg-red-50 text-red-600 rounded">
                     {message.error}
@@ -219,14 +211,27 @@ export default function ChatTranslator() {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Type a message..."
-            className="flex-1 text-black p-2 border rounded resize-none"
+            className="flex-1 text-black p-2 outline-blue-800 rounded resize-none"
             rows={2}
           />
           <button
-            type="submit"
-            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+            className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 rounded hover:opacity-80 disabled:bg-gray-300"
+            aria-label="Send message"
           >
-            Send
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+              />
+            </svg>
           </button>
           
         </div>
