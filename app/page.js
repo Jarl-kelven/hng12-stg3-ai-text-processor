@@ -151,13 +151,13 @@ export default function Home() {
             {message.summary && (
               <div className="mt-2 p-2 bg-blue-50 rounded">
                 <p className="font-semibold">Summary:</p>
-                <p className="text-gray-700">{message.summary}</p>
+                <p className="text-black">{message.summary}</p>
               </div>
             )}
             {message.translation && (
               <div className="mt-2 p-2 bg-green-50 rounded">
                 <p className="font-semibold">Translation ({message.targetLang}):</p>
-                <p className="text-gray-700">{message.translation}</p>
+                <p className="text-black">{message.translation}</p>
               </div>
             )}
           </div>
@@ -170,7 +170,7 @@ export default function Home() {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Enter text to process..."
-            className="flex-1 p-2 border rounded resize-none"
+            className="flex-1 text-black p-2 border rounded resize-none"
             rows={3}
             disabled={loading}
             aria-label="Input text"
