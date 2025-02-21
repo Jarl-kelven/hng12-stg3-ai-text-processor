@@ -1,156 +1,237 @@
-"use client";
-import { useState, useEffect } from "react";
+'use client';
+import { useEffect, useState } from 'react';
 
-export default function Home() {
-  const [inputText, setInputText] = useState("");
+export default function ChatTranslator() {
+  const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState([]);
-  const [targetLang, setTargetLang] = useState("en");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [isClient, setIsClient] = useState(false);
+  const [targetLanguage, setTargetLanguage] = useState('en');
+  const [isSupported, setIsSupported] = useState(true);
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  const supportedLangs = [
-    { code: "en", name: "English" },
-    { code: "pt", name: "Portuguese" },
-    { code: "es", name: "Spanish" },
-    { code: "ru", name: "Russian" },
-    { code: "tr", name: "Turkish" },
-    { code: "fr", name: "French" },
+  const languages = [
+    { code: 'en', name: 'English' },
+    { code: 'es', name: 'Spanish' },
+    { code: 'pt', name: 'Portuguese' },
+    { code: 'tr', name: 'Turkey' },
+    { code: 'ru', name: 'Russian' },
+    { code: 'ja', name: 'Japanese' }
   ];
 
-  const handleSend = async () => {
-    if (!inputText.trim()) {
-      setError("Please enter some text");
-      return;
-    }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
 
     const newMessage = {
-      id: Date.now().toString(),
+      id: Date.now(),
       text: inputText,
+      detectedLang: '',
+      confidence: 0,
+      translations: {},
+      showTranslation: false
     };
 
     try {
-      setLoading(true);
-      setError("");
-
-      if (!window.ai || !window.ai.languageDetection) {
-        setError("Language detection service is unavailable.");
-        setLoading(false);
-        return;
-      }
-
-      const detectedLang = await window.ai.languageDetection.detect(inputText);
-      newMessage.detectedLang = detectedLang[0]?.language;
-
-      setMessages((prev) => [...prev, newMessage]);
-      setInputText("");
-    } catch (err) {
-      setError(err?.message || "Failed to detect language");
-    } finally {
-      setLoading(false);
+      const detector = await self.translation.createDetector();
+      const detectionResult = await detector.detect(inputText.trim());
+      const { detectedLanguage, confidence } = detectionResult[0];
+      
+      newMessage.detectedLang = languageTagToHumanReadable(detectedLanguage, 'en');
+      newMessage.confidence = (confidence * 100).toFixed(1);
+      
+      setMessages(prev => [newMessage, ...prev]);
+      setInputText('');
+    } catch (error) {
+      console.error('Detection error:', error);
     }
+  };
+
+  // Delete entire message
+  const handleDeleteMessage = (messageId) => {
+    setMessages(prev => prev.filter(msg => msg.id !== messageId));
+  };
+
+  // Clear specific translation
+  const handleClearTranslation = (messageId) => {
+    setMessages(prev => prev.map(msg => 
+      msg.id === messageId 
+        ? { ...msg, translations: {}, showTranslation: false } 
+        : msg
+    ));
   };
 
   const handleTranslate = async (messageId) => {
+    setMessages(prev => prev.map(msg => {
+      if (msg.id === messageId) {
+        return { ...msg, loading: true };
+      }
+      return msg;
+    }));
+  
     try {
-      setLoading(true);
-      setError("");
-
-      const messageIndex = messages.findIndex((m) => m.id === messageId);
-      const message = messages[messageIndex];
-
-      const translation = await window.ai.translator.translate({
-        text: message.text,
-        targetLang,
-        sourceLang: message.detectedLang,
+      const message = messages.find(msg => msg.id === messageId);
+      const detector = await self.translation.createDetector();
+      const sourceLang = (await detector.detect(message.text.trim()))[0].detectedLanguage;
+  
+      // Add validation checks
+      if (sourceLang === targetLanguage) {
+        throw new Error('Source and target languages are the same');
+      }
+  
+      // Define supported language pairs
+      const supportedPairs = {
+        en: ['es', 'ja', 'pt', 'ru', 'tr'],
+        
+      };
+  
+      if (!supportedPairs[sourceLang]?.includes(targetLanguage)) {
+        throw new Error('Unsupported language pair');
+      }
+  
+      const translator = await self.translation.createTranslator({
+        sourceLanguage: sourceLang,
+        targetLanguage
       });
-
-      const updatedMessages = [...messages];
-      updatedMessages[messageIndex].translation = translation;
-      updatedMessages[messageIndex].targetLang = targetLang;
-      setMessages(updatedMessages);
-    } catch (err) {
-      setError(err?.message || "Translation failed. Language pair may not be supported.");
-    } finally {
-      setLoading(false);
+  
+      const translation = await translator.translate(message.text.trim());
+  
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === messageId) {
+          return {
+            ...msg,
+            translations: {
+              ...msg.translations,
+              [targetLanguage]: translation
+            },
+            showTranslation: true,
+            loading: false,
+            error: null
+          };
+        }
+        return msg;
+      }));
+    } catch (error) {
+      console.error('Translation error:', error);
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === messageId) {
+          return { 
+            ...msg, 
+            loading: false,
+            error: error.message.includes('same') 
+              ? 'Cannot translate to the same language' 
+              : 'Unsupported language combination'
+          };
+        }
+        return msg;
+      }));
     }
   };
 
-  if (!isClient) return null;
+  const languageTagToHumanReadable = (languageTag, targetLanguage) => {
+    const displayNames = new Intl.DisplayNames([targetLanguage], { type: 'language' });
+    return displayNames.of(languageTag);
+  };
+
+  useEffect(() => {
+    if (!('translation' in self) || !('createDetector' in self.translation)) {
+      setIsSupported(false);
+    }
+  }, []);
+
+  if (!isSupported) {
+    return <p className="text-red-500 p-4">Translation API is not supported on this browser.</p>;
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="flex flex-col h-screen">
+    <header className="text-center bg-gradient-to-r from-blue-500 to-purple-600 text-white py-6 shadow-lg">
+      <h1 className="text-3xl md:text-4xl font-bold">
+        Welcome to the Ultimate Text Translator App!
+      </h1>
+    </header>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message) => (
-          <div key={message.id} className="bg-white p-4 rounded-lg shadow relative w-1/3">
-            <p className="text-gray-500 text-xs absolute top-2 right-2">
-              {message.detectedLang ? `Detected language: ${message.detectedLang}` : ""}
-            </p>
-            <p className="text-gray-800 text-lg font-semibold mb-2">{message.text}</p>
-            <div className="flex items-center gap-2">
+          <div key={message.id} className="bg-white p-4 rounded-lg shadow relative">
+            {/* Delete Message Button */}
+            <button
+              onClick={() => handleDeleteMessage(message.id)}
+              className="absolute text-4xl top-2 right-2 text-gray-400 hover:text-red-500"
+              aria-label="Delete message"
+            >
+              ×
+            </button>
+
+            <div className="mb-2">
+              <p className="text-gray-800">{message.text}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Detected: {message.detectedLang} ({message.confidence}% confidence)
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 border-t pt-2">
               <select
-                value={targetLang}
-                onChange={(e) => setTargetLang(e.target.value)}
-                className="border p-2 rounded"
-                disabled={loading}
+                value={targetLanguage}
+                onChange={(e) => setTargetLanguage(e.target.value)}
+                className="border text-blue-800 p-2 rounded flex-1"
               >
-                {supportedLangs.map((lang) => (
+                {languages.map((lang) => (
                   <option key={lang.code} value={lang.code}>{lang.name}</option>
                 ))}
               </select>
+              
               <button
                 onClick={() => handleTranslate(message.id)}
-                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-300"
-                disabled={loading}
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                disabled={message.loading}
               >
-                Translate
+                {message.loading ? 'Translating...' : 'Translate'}
               </button>
+
+              {/* Clear Translation Button */}
+              {message.showTranslation && (
+                <button
+                  onClick={() => handleClearTranslation(message.id)}
+                  className="bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300"
+                  aria-label="Clear translation"
+                >
+                  Clear
+                </button>
+              )}
             </div>
-            {message.translation && (
-              <div className="mt-2 p-2 bg-green-50 rounded">
-                <p className="text-black">{message.translation}</p>
+
+            {message.showTranslation && message.translations[targetLanguage] && (
+              <div className="mt-2 p-2 bg-gray-50 rounded">
+                <p className="font-semibold">Translated to {languages.find(l => l.code === targetLanguage).name}:</p>
+                <p className="text-gray-700">{message.translations[targetLanguage]}</p>
+                {message.error && (
+                  <div className="mt-2 p-2 bg-red-50 text-red-600 rounded">
+                    {message.error}
+                  </div>
+                )}
               </div>
             )}
           </div>
         ))}
       </div>
-      <div className="p-4 bg-white border-t flex gap-4">
-        <textarea
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder="Enter your text..."
-          className="flex-1 text-black p-2 border rounded resize-none"
-          rows={3}
-          disabled={loading}
-          aria-label="Input text"
-        />
-        <button
-          onClick={handleSend}
-          className="bg-purple-500 text-white p-4 rounded hover:bg-purple-600 disabled:bg-gray-300"
-          disabled={loading}
-          aria-label="Send message"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+
+      <form onSubmit={handleSubmit} className="p-4 border-t">
+        <div className="flex gap-2">
+          <textarea
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder="Type a message..."
+            className="flex-1 text-black p-2 border rounded resize-none"
+            rows={2}
+          />
+          <button
+            type="submit"
+            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-            />
-          </svg>
-        </button>
-      </div>
-      {error && <div className="p-2 bg-red-100 text-red-700 rounded text-center">{error}</div>}
+            Send
+          </button>
+          
+        </div>
+      </form>
+      
     </div>
   );
 }
